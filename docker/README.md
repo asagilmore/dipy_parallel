@@ -24,7 +24,7 @@ unfortunatly the detected number of cpus inside the container will still be the 
 
 ## Argument Details
 - `--models`: Models to run (e.g., `csdm`, `fwdtim`).
-- `--hcp_access_key_id`, `--hcp_secret_access_key`: The AWS access keys for accessing HCP data, Keys can be obtained [here](https://db.humanconnectome.org/)
+- `--hcp_access_key_id`, `--hcp_secret_access_key`: The AWS credentials for accessing HCP data, Keys can be obtained [here](https://db.humanconnectome.org/)
 - `--s3_access_key_id`, `--s3_secret_access_key`: AWS credentials that have write permission for the s3 bucket.
 - `--min_scale`, `--max_scale`: number of scales to downsample by, default is 1-1, so no downsampling.
 - `--min_chunks`, `--max_chunks`: Range of chunks to compute, # of chunks is by orders of 2, ie running with min_chunks: 2 max_chunks: 4 will run chunk sizes 2^2, 2^3, and 2^4
