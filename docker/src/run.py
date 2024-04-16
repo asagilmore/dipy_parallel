@@ -16,18 +16,18 @@ import uuid
 cpu_count = multiprocessing.cpu_count()
 memory_size = psutil.virtual_memory().total
 
-def upload_to_s3(file_name, bucket, object_name=None):
+
+def upload_to_s3(file_name, bucket, object_name=None, region_name='us-west-2',
+                 aws_access_key_id=None, aws_secret_access_key=None):
     # If S3 object_name was not specified, use file_name
     if object_name is None:
         object_name = file_name
 
     # Upload the file
-    s3_client = boto3.client('s3',region_name='us-west-2')
-    try:
-        response = s3_client.upload_file(file_name, bucket, object_name)
-    except ClientError as e:
-        logging.error(e)
-        return False
+    s3_client = boto3.client('s3', region_name='us-west-2',
+                             aws_access_key_id=aws_access_key_id,
+                             aws_secret_access_key=aws_secret_access_key)
+    response = s3_client.upload_file(file_name, bucket, object_name)
     return True
 
 
@@ -173,14 +173,18 @@ if __name__ == "__main__":
     parser.add_argument('--s3_secret_access_key', type=str, default=None)
     parser.add_argument('--hcp_access_key_id', type=str, required=True)
     parser.add_argument('--hcp_secret_access_key', type=str, required=True)
+    parser.add_argument('--num_cpus', type=int, default=None)
 
     args = parser.parse_args()
 
+    if args.num_cpus:
+        cpu_count = args.num_cpus
+
+    uuid = uuid.uuid4().hex
+    unique_object_name = f"data_{uuid}.csv"
+
     add_aws_profile('hcp', args.hcp_access_key_id,
                     args.hcp_secret_access_key)
-
-    add_aws_profile('default', args.s3_access_key_id,
-                    args.s3_secret_access_key)
 
     print('running with args:', args)
 
@@ -207,7 +211,10 @@ if __name__ == "__main__":
                     print(f'running {model.__class__.__name__} with serial engine, and shape {data.shape}')
                     run_fit(model, "serial", data, brain_mask_data, 1)
                     save_data(args.filename)
-
+                upload_to_s3(args.filename, args.s3bucket,
+                             object_name=unique_object_name,
+                             aws_access_key_id=args.s3_access_key_id,
+                             aws_secret_access_key=args.s3_secret_access_key)
             for x in range(args.min_chunks, args.max_chunks + 1):
                 num_chunks = 2**x
                 print(np.prod(data.shape[:3]))
@@ -218,9 +225,7 @@ if __name__ == "__main__":
                         run_fit(model, 'ray', data, brain_mask_data,
                                 num_chunks)
                         save_data(args.filename)
-
-    if args.s3bucket:
-        uuid = uuid.uuid4().hex
-        unique_object_name = f"{args.f}_{uuid}"
-        upload_to_s3(args.filename, args.s3bucket,
-                     object_name=unique_object_name)
+                    upload_to_s3(args.filename, args.s3bucket,
+                                 object_name=unique_object_name,
+                                 aws_access_key_id=args.s3_access_key_id,
+                                 aws_secret_access_key=args.s3_secret_access_key)
