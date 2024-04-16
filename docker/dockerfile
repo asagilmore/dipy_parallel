@@ -6,7 +6,7 @@ RUN pip install --no-cache-dir --upgrade pip
 
 RUN pip install --no-cache-dir git+https://github.com/asagilmore/dipy.git@parallel_test
 
-RUN pip install scikit-image[optional]
+RUN pip install scikit-image[optional]==0.23.1
 
 WORKDIR /app
 

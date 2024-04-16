@@ -1,5 +1,5 @@
 psutil
-ray
+ray=2.10.0
 numpy
 boto3
 pandas
