@@ -1,5 +1,3 @@
-import dipy.reconst.csdeconv as csd
-import dipy.reconst.fwdti as fwdti
 import time
 import multiprocessing
 import psutil
@@ -24,7 +22,7 @@ def upload_to_s3(file_name, bucket, object_name=None, region_name='us-west-2',
         object_name = file_name
 
     # Upload the file
-    s3_client = boto3.client('s3', region_name='us-west-2',
+    s3_client = boto3.client('s3', region_name=region_name,
                              aws_access_key_id=aws_access_key_id,
                              aws_secret_access_key=aws_secret_access_key)
     response = s3_client.upload_file(file_name, bucket, object_name)
@@ -162,12 +160,9 @@ if __name__ == "__main__":
     parser.add_argument('--min_scale', type=int, default=1)
     parser.add_argument('--max_scale', type=int, default=1)
     parser.add_argument('--num_runs', type=int, default=5)
-    parser.add_argument('--min_chunks', type=int, default=0)
-    parser.add_argument('--max_chunks', type=int, default=10)
     parser.add_argument('--models', type=str, default='csdm', nargs='+',
-                        choices=['csdm', 'fwdtim'])
+                        choices=['csdm', 'fwdtim', 'sfm'])
     parser.add_argument('--filename', type=str, default='data.csv')
-    parser.add_argument('--skip_serial', type=bool, default=False)
     parser.add_argument('--s3bucket', type=str, default=None)
     parser.add_argument('--s3_access_key_id', type=str, default=None)
     parser.add_argument('--s3_secret_access_key', type=str, default=None)
@@ -180,8 +175,10 @@ if __name__ == "__main__":
     if args.num_cpus:
         cpu_count = args.num_cpus
 
+    base_filename, __ = os.path.splitext(args.filename)
+
     uuid = uuid.uuid4().hex
-    unique_object_name = f"data_{uuid}.csv"
+    unique_object_name = f"{base_filename}_{uuid}.csv"
 
     add_aws_profile('hcp', args.hcp_access_key_id,
                     args.hcp_secret_access_key)
@@ -195,37 +192,30 @@ if __name__ == "__main__":
         models = []
 
         if 'csdm' in args.models:
+            import dipy.reconst.csdeconv as csd
             csdm = csd.ConstrainedSphericalDeconvModel(gtab, response=response)
             models.append(csdm)
         if 'fwdtim' in args.models:
+            import dipy.reconst.fwdti as fwdti
             fwdtim = fwdti.FreeWaterTensorModel(gtab)
             models.append(fwdtim)
-
+        if 'sfm' in args.models:
+            import dipy.reconst.sfm as sf
+            import dipy.data as dpd
+            sphere = dpd.get_sphere()
+            sfm = sf.SparseFascicleModel(gtab, sphere=sphere,
+                                         l1_ratio=0.5, alpha=0.001,
+                                         response=response[0])
+            models.append(sfm)
         if len(models) == 0:
             raise ValueError("No valid models specified")
 
         for model in models:
-
-            if not args.skip_serial:
-                for i in range(args.num_runs):
-                    print(f'running {model.__class__.__name__} with serial engine, and shape {data.shape}')
-                    run_fit(model, "serial", data, brain_mask_data, 1)
-                    save_data(args.filename)
-                upload_to_s3(args.filename, args.s3bucket,
-                             object_name=unique_object_name,
-                             aws_access_key_id=args.s3_access_key_id,
-                             aws_secret_access_key=args.s3_secret_access_key)
-            for x in range(args.min_chunks, args.max_chunks + 1):
-                num_chunks = 2**x
-                print(np.prod(data.shape[:3]))
-                print(num_chunks)
-                if (np.prod(data.shape[:3]) > num_chunks):
-                    for i in range(args.num_runs):
-                        print(f'running {model.__class__.__name__} with ray engine, num_chunks {num_chunks} and shape {data.shape}')
-                        run_fit(model, 'ray', data, brain_mask_data,
-                                num_chunks)
-                        save_data(args.filename)
-                    upload_to_s3(args.filename, args.s3bucket,
-                                 object_name=unique_object_name,
-                                 aws_access_key_id=args.s3_access_key_id,
-                                 aws_secret_access_key=args.s3_secret_access_key)
+            for i in range(args.num_runs):
+                print(f'running {model.__class__.__name__} with serial engine, and shape {data.shape}')
+                run_fit(model, "serial", data, brain_mask_data, 1)
+                save_data(args.filename)
+            upload_to_s3(args.filename, args.s3bucket,
+                         object_name=unique_object_name,
+                         aws_access_key_id=args.s3_access_key_id,
+                         aws_secret_access_key=args.s3_secret_access_key)
